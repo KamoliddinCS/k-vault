@@ -14,6 +14,7 @@ const nextConfig = {
     return config
   },
   // Increase body size limit for file uploads (100MB)
+  // Note: For Vercel, you may also need to set this in vercel.json
   experimental: {
     serverActions: {
       bodySizeLimit: '100mb',

@@ -35,9 +35,10 @@ export async function POST(request: Request) {
     try {
       formData = await request.formData()
     } catch (error: any) {
-      if (error.message?.includes("Request Entity Too Large") || error.message?.includes("Payload Too Large")) {
+      console.error("FormData parsing error:", error)
+      if (error.message?.includes("Request Entity Too Large") || error.message?.includes("Payload Too Large") || error.message?.includes("413")) {
         return NextResponse.json(
-          { error: "File size too large. Maximum size is 100MB." },
+          { error: "File size too large. Maximum size is 100MB. If your file is smaller, this may be a server configuration issue." },
           { status: 413 }
         )
       }
@@ -60,9 +61,12 @@ export async function POST(request: Request) {
 
     // Check file size (100MB limit)
     const maxSize = 100 * 1024 * 1024 // 100MB
+    const fileSizeMB = (file.size / 1024 / 1024).toFixed(2)
+    console.log(`Uploading file: ${file.name}, size: ${fileSizeMB}MB`)
+    
     if (file.size > maxSize) {
       return NextResponse.json(
-        { error: `File size exceeds limit. Maximum size is 100MB. Your file is ${(file.size / 1024 / 1024).toFixed(2)}MB.` },
+        { error: `File size exceeds limit. Maximum size is 100MB. Your file is ${fileSizeMB}MB.` },
         { status: 413 }
       )
     }
@@ -106,6 +110,10 @@ export async function POST(request: Request) {
       const r2 = getR2Client()
       const bucketName = getBucketName()
       
+      console.log(`Uploading to R2 bucket: ${bucketName}, key: ${fileKey}`)
+      console.log(`R2 endpoint: ${process.env.R2_ENDPOINT || `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`}`)
+      console.log(`R2 credentials configured: ${!!process.env.R2_ACCESS_KEY_ID && !!process.env.R2_SECRET_ACCESS_KEY}`)
+      
       await r2.send(
         new PutObjectCommand({
           Bucket: bucketName,
@@ -115,8 +123,16 @@ export async function POST(request: Request) {
           CacheControl: "max-age=3600",
         })
       )
+      
+      console.log(`Successfully uploaded to R2: ${fileKey}`)
     } catch (r2Error: any) {
       console.error("R2 upload error:", r2Error)
+      console.error("R2 error details:", {
+        name: r2Error.name,
+        message: r2Error.message,
+        code: r2Error.Code,
+        requestId: r2Error.$metadata?.requestId,
+      })
       
       // Check if it's a configuration error
       if (r2Error.message?.includes("not configured") || r2Error.message?.includes("not set")) {
@@ -126,8 +142,24 @@ export async function POST(request: Request) {
         )
       }
       
+      // Check for authentication errors
+      if (r2Error.name === "InvalidAccessKeyId" || r2Error.name === "SignatureDoesNotMatch") {
+        return NextResponse.json(
+          { error: "R2 authentication failed. Please check your R2 credentials." },
+          { status: 500 }
+        )
+      }
+      
+      // Check for bucket errors
+      if (r2Error.name === "NoSuchBucket") {
+        return NextResponse.json(
+          { error: `R2 bucket "${bucketName}" not found. Please check your bucket name.` },
+          { status: 500 }
+        )
+      }
+      
       return NextResponse.json(
-        { error: `Failed to upload to storage: ${r2Error.message || "Unknown error"}` },
+        { error: `Failed to upload to storage: ${r2Error.message || r2Error.name || "Unknown error"}` },
         { status: 500 }
       )
     }
