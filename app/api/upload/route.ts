@@ -114,6 +114,7 @@ export async function POST(request: Request) {
       console.log(`R2 endpoint: ${process.env.R2_ENDPOINT || `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`}`)
       console.log(`R2 credentials configured: ${!!process.env.R2_ACCESS_KEY_ID && !!process.env.R2_SECRET_ACCESS_KEY}`)
       
+      // Use path-style addressing for R2 (bucket name in path, not subdomain)
       await r2.send(
         new PutObjectCommand({
           Bucket: bucketName,
@@ -121,6 +122,11 @@ export async function POST(request: Request) {
           Body: fileBuffer,
           ContentType: file.type || "application/octet-stream",
           CacheControl: "max-age=3600",
+          // Add metadata to help with debugging
+          Metadata: {
+            uploadedAt: new Date().toISOString(),
+            originalName: file.name,
+          },
         })
       )
       

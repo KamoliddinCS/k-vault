@@ -16,6 +16,7 @@ export async function GET() {
     console.log("Secret Access Key:", process.env.R2_SECRET_ACCESS_KEY ? "Set" : "Not set")
     
     // Try to list objects (this will verify connection)
+    // Use path-style addressing for R2 compatibility
     const command = new ListObjectsV2Command({
       Bucket: bucketName,
       MaxKeys: 1,
