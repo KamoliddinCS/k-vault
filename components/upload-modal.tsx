@@ -32,7 +32,15 @@ export default function UploadModal({ onClose }: UploadModalProps) {
   const [type, setType] = useState<ResourceType>("past_exam")
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null)
+  const [uploadProgress, setUploadProgress] = useState<{
+    current: number
+    total: number
+    bytesUploaded: number
+    totalBytes: number
+    speed: number // bytes per second
+    timeRemaining: number // seconds
+    status: "uploading" | "reassembling" | "complete"
+  } | null>(null)
 
   const { data: courses } = useQuery({
     queryKey: ["courses"],
@@ -142,66 +150,191 @@ export default function UploadModal({ onClose }: UploadModalProps) {
     professorId: string,
     type: ResourceType
   ) => {
-    const CHUNK_SIZE = 50 * 1024 * 1024 // 50MB
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
-    const uploadId = crypto.randomUUID()
+      // Use 40MB chunks for safety margin (Supabase limit is 50MB)
+      const CHUNK_SIZE = 40 * 1024 * 1024 // 40MB
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
+      const uploadId = crypto.randomUUID()
 
-    console.log(`Starting chunked upload: ${totalChunks} chunks for ${(file.size / 1024 / 1024).toFixed(2)}MB file`)
-    setUploadProgress({ current: 0, total: totalChunks })
+      console.log(`Starting chunked upload: ${totalChunks} chunks for ${(file.size / 1024 / 1024).toFixed(2)}MB file`)
+      
+      const startTime = Date.now()
+      let lastUpdateTime = startTime
+      let completedBytes = 0 // Bytes from fully completed chunks
 
-    // Upload each chunk
-    for (let i = 0; i < totalChunks; i++) {
-      const start = i * CHUNK_SIZE
-      const end = Math.min(start + CHUNK_SIZE, file.size)
-      const chunk = file.slice(start, end)
-
-      const chunkFormData = new FormData()
-      chunkFormData.append("chunk", chunk)
-      chunkFormData.append("uploadId", uploadId)
-      chunkFormData.append("chunkIndex", i.toString())
-      chunkFormData.append("totalChunks", totalChunks.toString())
-      chunkFormData.append("fileName", file.name)
-
-      const res = await fetch("/api/upload/chunk", {
-        method: "POST",
-        body: chunkFormData,
+      setUploadProgress({
+        current: 0,
+        total: totalChunks,
+        bytesUploaded: 0,
+        totalBytes: file.size,
+        speed: 0,
+        timeRemaining: 0,
+        status: "uploading",
       })
 
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(`Failed to upload chunk ${i + 1}/${totalChunks}: ${data.error || "Unknown error"}`)
+      // Upload each chunk with retry logic
+      const MAX_RETRIES = 3
+      
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE
+        const end = Math.min(start + CHUNK_SIZE, file.size)
+        const chunk = file.slice(start, end)
+        const chunkSize = chunk.size
+
+        let retryCount = 0
+        let chunkUploaded = false
+
+        while (retryCount < MAX_RETRIES && !chunkUploaded) {
+          try {
+            const chunkFormData = new FormData()
+            chunkFormData.append("chunk", chunk)
+            chunkFormData.append("uploadId", uploadId)
+            chunkFormData.append("chunkIndex", i.toString())
+            chunkFormData.append("totalChunks", totalChunks.toString())
+            chunkFormData.append("fileName", file.name)
+
+            // Use XMLHttpRequest for progress tracking within chunk
+            await new Promise<void>((resolve, reject) => {
+              const xhr = new XMLHttpRequest()
+              let lastChunkBytes = 0
+
+              // Track upload progress for this chunk
+              xhr.upload.addEventListener("progress", (e) => {
+                if (e.lengthComputable) {
+                  const chunkProgress = e.loaded / e.total
+                  const currentChunkBytes = chunkProgress * chunkSize
+                  const totalBytesUploaded = completedBytes + currentChunkBytes
+                  
+                  const now = Date.now()
+                  const timeElapsed = (now - lastUpdateTime) / 1000 // seconds
+                  
+                  if (timeElapsed > 0.5) { // Update every 500ms
+                    const bytesDelta = currentChunkBytes - lastChunkBytes
+                    const speed = bytesDelta / timeElapsed
+                    const remainingBytes = file.size - totalBytesUploaded
+                    const timeRemaining = speed > 0 ? remainingBytes / speed : 0
+
+                    setUploadProgress({
+                      current: i,
+                      total: totalChunks,
+                      bytesUploaded: totalBytesUploaded,
+                      totalBytes: file.size,
+                      speed,
+                      timeRemaining,
+                      status: "uploading",
+                    })
+
+                    lastUpdateTime = now
+                    lastChunkBytes = currentChunkBytes
+                  }
+                }
+              })
+
+              xhr.addEventListener("load", () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                  completedBytes += chunkSize
+                  resolve()
+                } else {
+                  try {
+                    const data = JSON.parse(xhr.responseText)
+                    reject(new Error(data.error || `HTTP ${xhr.status}`))
+                  } catch {
+                    reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`))
+                  }
+                }
+              })
+
+              xhr.addEventListener("error", () => {
+                reject(new Error("Network error during chunk upload"))
+              })
+
+              xhr.addEventListener("abort", () => {
+                reject(new Error("Upload aborted"))
+              })
+
+              xhr.open("POST", "/api/upload/chunk")
+              xhr.send(chunkFormData)
+            })
+
+            chunkUploaded = true
+            console.log(`Uploaded chunk ${i + 1}/${totalChunks}`)
+            
+            // Update progress after chunk completes
+            const elapsedTime = (Date.now() - startTime) / 1000 // seconds
+            const averageSpeed = completedBytes / elapsedTime
+            const remainingBytes = file.size - completedBytes
+            const estimatedTimeRemaining = averageSpeed > 0 ? remainingBytes / averageSpeed : 0
+
+            setUploadProgress({
+              current: i + 1,
+              total: totalChunks,
+              bytesUploaded: completedBytes,
+              totalBytes: file.size,
+              speed: averageSpeed,
+              timeRemaining: estimatedTimeRemaining,
+              status: "uploading",
+            })
+          } catch (error: any) {
+            retryCount++
+            if (retryCount >= MAX_RETRIES) {
+              throw new Error(
+                `Failed to upload chunk ${i + 1}/${totalChunks} after ${MAX_RETRIES} attempts: ${error.message}`
+              )
+            }
+            console.warn(`Retrying chunk ${i + 1} (attempt ${retryCount + 1}/${MAX_RETRIES})...`)
+            // Wait before retry (exponential backoff)
+            await new Promise((resolve) => setTimeout(resolve, 1000 * retryCount))
+          }
+        }
       }
 
-      setUploadProgress({ current: i + 1, total: totalChunks })
-      console.log(`Uploaded chunk ${i + 1}/${totalChunks}`)
-    }
+      // Complete the upload by reassembling chunks
+      setUploadProgress((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: "reassembling",
+            }
+          : null
+      )
 
-    // Complete the upload by reassembling chunks
-    setUploadProgress({ current: totalChunks, total: totalChunks + 1 })
-    const completeRes = await fetch("/api/upload/complete", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        uploadId,
-        fileName: file.name,
-        totalChunks,
-        courseId,
-        semesterId,
-        professorId: professorId || null,
-        title,
-        type,
-      }),
-    })
+      const completeRes = await fetch("/api/upload/complete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          uploadId,
+          fileName: file.name,
+          totalChunks,
+          courseId,
+          semesterId,
+          professorId: professorId || null,
+          title,
+          type,
+        }),
+      })
 
-    if (!completeRes.ok) {
-      const data = await completeRes.json()
-      throw new Error(`Failed to complete upload: ${data.error || "Unknown error"}`)
-    }
+      if (!completeRes.ok) {
+        const data = await completeRes.json()
+        throw new Error(`Failed to complete upload: ${data.error || "Unknown error"}`)
+      }
 
-    setUploadProgress(null)
-    console.log("Chunked upload completed successfully")
+      setUploadProgress((prev) =>
+        prev
+          ? {
+              ...prev,
+              bytesUploaded: prev.totalBytes,
+              status: "complete",
+            }
+          : null
+      )
+
+      // Clear progress after a brief delay to show completion
+      setTimeout(() => {
+        setUploadProgress(null)
+      }, 1000)
+
+      console.log("Chunked upload completed successfully")
   }
 
   return (
@@ -329,16 +462,58 @@ export default function UploadModal({ onClose }: UploadModalProps) {
             )}
 
             {uploadProgress && (
-              <div className="space-y-2">
+              <div className="space-y-3 p-3 sm:p-4 bg-muted/50 rounded-lg border">
                 <div className="flex items-center justify-between text-xs sm:text-sm">
-                  <span>Uploading chunks...</span>
-                  <span>{uploadProgress.current} / {uploadProgress.total}</span>
+                  <span className="font-medium">
+                    {uploadProgress.status === "reassembling"
+                      ? "Reassembling file..."
+                      : uploadProgress.status === "complete"
+                      ? "Upload complete!"
+                      : "Uploading file..."}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {uploadProgress.current} / {uploadProgress.total} chunks
+                  </span>
                 </div>
-                <div className="w-full bg-muted rounded-full h-2">
+                <div className="w-full bg-muted rounded-full h-2.5">
                   <div
-                    className="bg-primary h-2 rounded-full transition-all"
-                    style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
+                    className="bg-primary h-2.5 rounded-full transition-all duration-300"
+                    style={{
+                      width: `${(uploadProgress.bytesUploaded / uploadProgress.totalBytes) * 100}%`,
+                    }}
                   />
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div>
+                    <div className="text-muted-foreground">Progress</div>
+                    <div className="font-medium">
+                      {((uploadProgress.bytesUploaded / uploadProgress.totalBytes) * 100).toFixed(1)}%
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Uploaded</div>
+                    <div className="font-medium">
+                      {(uploadProgress.bytesUploaded / 1024 / 1024).toFixed(2)} MB
+                    </div>
+                  </div>
+                  {uploadProgress.speed > 0 && uploadProgress.status === "uploading" && (
+                    <>
+                      <div>
+                        <div className="text-muted-foreground">Speed</div>
+                        <div className="font-medium">
+                          {(uploadProgress.speed / 1024 / 1024).toFixed(2)} MB/s
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground">Time left</div>
+                        <div className="font-medium">
+                          {uploadProgress.timeRemaining > 60
+                            ? `${Math.floor(uploadProgress.timeRemaining / 60)}m ${Math.floor(uploadProgress.timeRemaining % 60)}s`
+                            : `${Math.floor(uploadProgress.timeRemaining)}s`}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -349,7 +524,13 @@ export default function UploadModal({ onClose }: UploadModalProps) {
               </Button>
               <Button type="submit" disabled={uploading} className="w-full sm:w-auto">
                 <UploadIcon className="h-4 w-4 mr-2" />
-                {uploading ? (uploadProgress ? `Uploading... ${uploadProgress.current}/${uploadProgress.total}` : "Uploading...") : "Upload"}
+                {uploading
+                  ? uploadProgress?.status === "reassembling"
+                    ? "Reassembling..."
+                    : uploadProgress?.status === "complete"
+                    ? "Complete!"
+                    : "Uploading..."
+                  : "Upload"}
               </Button>
             </div>
           </form>

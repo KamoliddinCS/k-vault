@@ -7,8 +7,9 @@ export const maxDuration = 60
 export const runtime = 'nodejs'
 
 // Supabase Storage has a 50MB limit per file upload
-// Files larger than 50MB should use chunked uploads via /api/upload/chunk
-const MAX_SINGLE_UPLOAD_SIZE = 50 * 1024 * 1024 // 50MB
+// Files larger than 40MB should use chunked uploads via /api/upload/chunk
+// Using 40MB threshold for safety margin
+const MAX_SINGLE_UPLOAD_SIZE = 40 * 1024 * 1024 // 40MB
 
 export async function POST(request: Request) {
   try {
@@ -65,11 +66,11 @@ export async function POST(request: Request) {
     const fileSizeMB = (file.size / 1024 / 1024).toFixed(2)
     console.log(`Uploading file: ${file.name}, size: ${fileSizeMB}MB`)
     
-    // Files larger than 50MB need to use chunked uploads
+    // Files larger than 40MB need to use chunked uploads
     if (file.size > MAX_SINGLE_UPLOAD_SIZE) {
       return NextResponse.json(
         { 
-          error: `File size exceeds single upload limit. Files larger than 50MB must use chunked uploads. Your file is ${fileSizeMB}MB.`,
+          error: `File size exceeds single upload limit. Files larger than 40MB must use chunked uploads. Your file is ${fileSizeMB}MB.`,
           requiresChunkedUpload: true,
           fileSize: file.size,
         },

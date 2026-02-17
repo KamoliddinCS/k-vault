@@ -66,60 +66,54 @@ export async function POST(request: Request) {
 
     // Create final file path
     const deptCode = (course.department as any)?.code || "MISC"
-    const finalPath = `k-vault/${deptCode}/${course.course_code}/${semester.year}-${semester.term}/${randomUUID()}-${fileName}`
+    const fileId = randomUUID()
+    const finalPath = `k-vault/${deptCode}/${course.course_code}/${semester.year}-${semester.term}/${fileId}-${fileName}`
 
-    // Download all chunks and combine them
-    const chunks: ArrayBuffer[] = []
+    // Instead of reassembling, move chunks to final location
+    // This avoids the 50MB upload limit for reassembled files
+    const chunkPaths: string[] = []
+    const finalChunkPaths: string[] = []
     
     for (let i = 0; i < totalChunks; i++) {
       const chunkPath = `chunks/${uploadId}/${i}-${totalChunks}.part`
+      const finalChunkPath = `${finalPath}.chunk${i}`
       
+      chunkPaths.push(chunkPath)
+      finalChunkPaths.push(finalChunkPath)
+
+      // Download chunk
       const { data: chunkData, error: chunkError } = await supabase.storage
         .from("k-vault")
         .download(chunkPath)
 
       if (chunkError) {
-        // Clean up uploaded chunks on error
-        for (let j = 0; j < i; j++) {
-          const cleanupPath = `chunks/${uploadId}/${j}-${totalChunks}.part`
-          await supabase.storage.from("k-vault").remove([cleanupPath])
+        // Clean up any already moved chunks
+        if (finalChunkPaths.length > 0) {
+          await supabase.storage.from("k-vault").remove(finalChunkPaths)
         }
         throw new Error(`Failed to download chunk ${i + 1}: ${chunkError.message}`)
       }
 
-      chunks.push(await chunkData.arrayBuffer())
+      // Upload chunk to final location
+      const { error: uploadError } = await supabase.storage
+        .from("k-vault")
+        .upload(finalChunkPath, chunkData, {
+          cacheControl: "3600",
+          upsert: false,
+        })
+
+      if (uploadError) {
+        // Clean up any already moved chunks
+        await supabase.storage.from("k-vault").remove(finalChunkPaths)
+        throw new Error(`Failed to move chunk ${i + 1} to final location: ${uploadError.message}`)
+      }
     }
 
-    // Combine chunks into single file
-    const totalSize = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
-    const combinedBuffer = new Uint8Array(totalSize)
-    let offset = 0
-    
-    for (const chunk of chunks) {
-      combinedBuffer.set(new Uint8Array(chunk), offset)
-      offset += chunk.byteLength
-    }
-
-    // Upload combined file
-    const { data: finalUploadData, error: finalUploadError } = await supabase.storage
-      .from("k-vault")
-      .upload(finalPath, combinedBuffer, {
-        cacheControl: "3600",
-        upsert: false,
-        contentType: "application/octet-stream",
-      })
-
-    if (finalUploadError) {
-      throw finalUploadError
-    }
-
-    // Clean up chunk files
-    const chunkPaths = Array.from({ length: totalChunks }, (_, i) => 
-      `chunks/${uploadId}/${i}-${totalChunks}.part`
-    )
+    // Clean up temporary chunk files
     await supabase.storage.from("k-vault").remove(chunkPaths)
 
     // Create resource record in Supabase
+    // Store the base path and chunk count for reassembly on download
     const { data: resource, error: resourceError } = await supabase
       .from("resources")
       .insert({
@@ -128,7 +122,7 @@ export async function POST(request: Request) {
         professor_id: professorId || null,
         title,
         type,
-        file_url: finalPath,
+        file_url: finalPath, // Base path for chunks
         file_key: finalPath, // Keep for backward compatibility
         storage: "supabase", // Mark as Supabase storage
         uploaded_by: user.id,
