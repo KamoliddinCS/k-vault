@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 import { GetObjectCommand } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
-import { r2, R2_BUCKET_NAME } from "@/lib/r2"
+import { getR2Client, getBucketName } from "@/lib/r2"
 
 export async function GET(
   request: Request,
@@ -59,17 +59,28 @@ export async function GET(
     }
 
     if (storageType === "r2") {
-      // Generate R2 signed URL (valid for 1 hour)
-      const command = new GetObjectCommand({
-        Bucket: R2_BUCKET_NAME,
-        Key: fileKey,
-      })
+      try {
+        // Generate R2 signed URL (valid for 1 hour)
+        const r2 = getR2Client()
+        const bucketName = getBucketName()
+        
+        const command = new GetObjectCommand({
+          Bucket: bucketName,
+          Key: fileKey,
+        })
 
-      const signedUrl = await getSignedUrl(r2, command, {
-        expiresIn: 3600, // 1 hour
-      })
+        const signedUrl = await getSignedUrl(r2, command, {
+          expiresIn: 3600, // 1 hour
+        })
 
-      return NextResponse.json({ url: signedUrl })
+        return NextResponse.json({ url: signedUrl })
+      } catch (r2Error: any) {
+        console.error("R2 signed URL error:", r2Error)
+        return NextResponse.json(
+          { error: `Failed to generate download URL: ${r2Error.message || "Unknown error"}` },
+          { status: 500 }
+        )
+      }
     } else {
       // Fallback to Supabase Storage for legacy files
       const { data: signedUrlData, error: signedUrlError } =

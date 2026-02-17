@@ -88,10 +88,33 @@ export default function UploadModal({ onClose }: UploadModalProps) {
       })
 
       if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || "Upload failed")
+        // Try to parse JSON, but handle non-JSON responses
+        let errorMessage = "Upload failed"
+        try {
+          const contentType = res.headers.get("content-type")
+          if (contentType && contentType.includes("application/json")) {
+            const data = await res.json()
+            errorMessage = data.error || `Upload failed (${res.status})`
+          } else {
+            // Non-JSON response (e.g., "Request Entity Too Large")
+            const text = await res.text()
+            errorMessage = text || `Upload failed (${res.status})`
+            
+            // Handle common error messages
+            if (text.includes("Request Entity Too Large") || text.includes("Payload Too Large")) {
+              errorMessage = "File size too large. Maximum size is 100MB."
+            } else if (res.status === 413) {
+              errorMessage = "File size too large. Maximum size is 100MB."
+            }
+          }
+        } catch (parseError) {
+          // If parsing fails, use status text
+          errorMessage = `Upload failed: ${res.statusText || res.status}`
+        }
+        throw new Error(errorMessage)
       }
 
+      const data = await res.json()
       onClose()
     } catch (err: any) {
       setError(err.message || "Upload failed")
