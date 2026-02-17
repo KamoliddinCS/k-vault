@@ -1,6 +1,12 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { PutObjectCommand } from "@aws-sdk/client-s3"
+import { 
+  PutObjectCommand, 
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand
+} from "@aws-sdk/client-s3"
 import { getR2Client, getBucketName } from "@/lib/r2"
 import { randomUUID } from "node:crypto"
 
@@ -59,17 +65,20 @@ export async function POST(request: Request) {
       )
     }
 
-    // Check file size (100MB limit)
-    const maxSize = 100 * 1024 * 1024 // 100MB
+    // Check file size (5GB limit - R2's maximum)
+    const maxSize = 5 * 1024 * 1024 * 1024 // 5GB (R2's maximum)
     const fileSizeMB = (file.size / 1024 / 1024).toFixed(2)
     console.log(`Uploading file: ${file.name}, size: ${fileSizeMB}MB`)
     
     if (file.size > maxSize) {
       return NextResponse.json(
-        { error: `File size exceeds limit. Maximum size is 100MB. Your file is ${fileSizeMB}MB.` },
+        { error: `File size exceeds limit. Maximum size is 5GB. Your file is ${fileSizeMB}MB.` },
         { status: 413 }
       )
     }
+    
+    // Use multipart upload for files larger than 100MB
+    const useMultipartUpload = file.size > 100 * 1024 * 1024 // 100MB threshold
 
     // Get course info for folder structure
     const { data: course } = await supabase
@@ -113,24 +122,118 @@ export async function POST(request: Request) {
       console.log(`Uploading to R2 bucket: ${bucketName}, key: ${fileKey}`)
       console.log(`R2 endpoint: ${process.env.R2_ENDPOINT || `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`}`)
       console.log(`R2 credentials configured: ${!!process.env.R2_ACCESS_KEY_ID && !!process.env.R2_SECRET_ACCESS_KEY}`)
+      console.log(`Using ${useMultipartUpload ? 'multipart' : 'single-part'} upload`)
       
-      // Use path-style addressing for R2 (bucket name in path, not subdomain)
-      await r2.send(
-        new PutObjectCommand({
-          Bucket: bucketName,
-          Key: fileKey,
-          Body: fileBuffer,
-          ContentType: file.type || "application/octet-stream",
-          CacheControl: "max-age=3600",
-          // Add metadata to help with debugging
-          Metadata: {
-            uploadedAt: new Date().toISOString(),
-            originalName: file.name,
-          },
-        })
-      )
-      
-      console.log(`Successfully uploaded to R2: ${fileKey}`)
+      if (useMultipartUpload) {
+        // Multipart upload for files > 100MB
+        console.log(`Starting multipart upload for large file (${fileSizeMB}MB)`)
+        
+        let uploadId: string | undefined
+        
+        try {
+          // Start multipart upload
+          const createMultipartResponse = await r2.send(
+            new CreateMultipartUploadCommand({
+              Bucket: bucketName,
+              Key: fileKey,
+              ContentType: file.type || "application/octet-stream",
+              CacheControl: "max-age=3600",
+              Metadata: {
+                uploadedAt: new Date().toISOString(),
+                originalName: file.name,
+              },
+            })
+          )
+          
+          uploadId = createMultipartResponse.UploadId
+          if (!uploadId) {
+            throw new Error("Failed to initiate multipart upload")
+          }
+          
+          // Upload parts in chunks (10MB per chunk)
+          const chunkSize = 10 * 1024 * 1024 // 10MB
+          const totalParts = Math.ceil(fileBuffer.length / chunkSize)
+          const parts: Array<{ ETag: string; PartNumber: number }> = []
+          
+          console.log(`Uploading ${totalParts} parts...`)
+          
+          for (let partNumber = 1; partNumber <= totalParts; partNumber++) {
+            const start = (partNumber - 1) * chunkSize
+            const end = Math.min(start + chunkSize, fileBuffer.length)
+            const chunk = fileBuffer.subarray(start, end)
+            
+            console.log(`Uploading part ${partNumber}/${totalParts} (${(chunk.length / 1024 / 1024).toFixed(2)}MB)`)
+            
+            const uploadPartResponse = await r2.send(
+              new UploadPartCommand({
+                Bucket: bucketName,
+                Key: fileKey,
+                PartNumber: partNumber,
+                UploadId: uploadId,
+                Body: chunk,
+              })
+            )
+            
+            if (!uploadPartResponse.ETag) {
+              throw new Error(`Failed to upload part ${partNumber}`)
+            }
+            
+            parts.push({
+              ETag: uploadPartResponse.ETag,
+              PartNumber: partNumber,
+            })
+          }
+          
+          // Complete multipart upload
+          console.log(`Completing multipart upload...`)
+          await r2.send(
+            new CompleteMultipartUploadCommand({
+              Bucket: bucketName,
+              Key: fileKey,
+              UploadId: uploadId,
+              MultipartUpload: {
+                Parts: parts,
+              },
+            })
+          )
+          
+          console.log(`Successfully uploaded large file to R2: ${fileKey}`)
+        } catch (multipartError: any) {
+          // Abort multipart upload on any error
+          if (uploadId) {
+            try {
+              await r2.send(
+                new AbortMultipartUploadCommand({
+                  Bucket: bucketName,
+                  Key: fileKey,
+                  UploadId: uploadId,
+                })
+              )
+              console.log(`Aborted multipart upload: ${uploadId}`)
+            } catch (abortError) {
+              console.error("Failed to abort multipart upload:", abortError)
+            }
+          }
+          throw multipartError
+        }
+      } else {
+        // Single-part upload for files <= 100MB
+        await r2.send(
+          new PutObjectCommand({
+            Bucket: bucketName,
+            Key: fileKey,
+            Body: fileBuffer,
+            ContentType: file.type || "application/octet-stream",
+            CacheControl: "max-age=3600",
+            Metadata: {
+              uploadedAt: new Date().toISOString(),
+              originalName: file.name,
+            },
+          })
+        )
+        
+        console.log(`Successfully uploaded to R2: ${fileKey}`)
+      }
     } catch (r2Error: any) {
       console.error("R2 upload error:", r2Error)
       console.error("R2 error details:", {
