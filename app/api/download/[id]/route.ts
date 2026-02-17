@@ -1,8 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { GetObjectCommand } from "@aws-sdk/client-s3"
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
-import { getR2Client, getBucketName } from "@/lib/r2"
 
 export async function GET(
   request: Request,
@@ -47,8 +44,7 @@ export async function GET(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
-    // Determine storage type and generate signed URL
-    const storageType = resource.storage || "r2" // Default to R2 for new uploads
+    // Generate signed URL from Supabase Storage
     const fileKey = resource.file_key || resource.file_url
 
     if (!fileKey) {
@@ -58,40 +54,21 @@ export async function GET(
       )
     }
 
-    if (storageType === "r2") {
-      try {
-        // Generate R2 signed URL (valid for 1 hour)
-        const r2 = getR2Client()
-        const bucketName = getBucketName()
-        
-        const command = new GetObjectCommand({
-          Bucket: bucketName,
-          Key: fileKey,
-        })
+    // Generate signed URL (valid for 1 hour)
+    const { data: signedUrlData, error: signedUrlError } =
+      await supabase.storage
+        .from("k-vault")
+        .createSignedUrl(fileKey, 3600)
 
-        const signedUrl = await getSignedUrl(r2, command, {
-          expiresIn: 3600, // 1 hour
-        })
-
-        return NextResponse.json({ url: signedUrl })
-      } catch (r2Error: any) {
-        console.error("R2 signed URL error:", r2Error)
-        return NextResponse.json(
-          { error: `Failed to generate download URL: ${r2Error.message || "Unknown error"}` },
-          { status: 500 }
-        )
-      }
-    } else {
-      // Fallback to Supabase Storage for legacy files
-      const { data: signedUrlData, error: signedUrlError } =
-        await supabase.storage
-          .from("k-vault")
-          .createSignedUrl(fileKey, 3600)
-
-      if (signedUrlError) throw signedUrlError
-
-      return NextResponse.json({ url: signedUrlData.signedUrl })
+    if (signedUrlError) {
+      console.error("Supabase signed URL error:", signedUrlError)
+      return NextResponse.json(
+        { error: `Failed to generate download URL: ${signedUrlError.message || "Unknown error"}` },
+        { status: 500 }
+      )
     }
+
+    return NextResponse.json({ url: signedUrlData.signedUrl })
   } catch (error: any) {
     console.error("Download error:", error)
     return NextResponse.json({ error: error.message || "Download failed" }, { status: 500 })

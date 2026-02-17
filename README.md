@@ -5,10 +5,10 @@ A scalable, secure internal resource platform for KAIST students.
 ## Tech Stack
 
 - **Frontend**: Next.js 14 (App Router), TypeScript, TailwindCSS, shadcn/ui
-- **Backend**: Supabase (PostgreSQL, Auth)
-- **Storage**: Cloudflare R2 (S3-compatible object storage)
+- **Backend**: Supabase (PostgreSQL, Auth, Storage)
+- **Storage**: Supabase Storage (with chunked uploads for files > 50MB)
 - **State Management**: React Query
-- **Hosting**: Vercel (Frontend), Supabase Cloud (Database), Cloudflare R2 (Files)
+- **Hosting**: Vercel (Frontend), Supabase Cloud (Database & Files)
 
 ## Features
 
@@ -44,29 +44,16 @@ A scalable, secure internal resource platform for KAIST students.
    - Run the migration files in order:
      - `supabase/migrations/001_initial_schema.sql`
      - `supabase/migrations/002_admin_policies.sql`
-     - `supabase/migrations/003_add_r2_storage.sql`
+     - `supabase/migrations/003_add_r2_storage.sql` (keeps storage column for backward compatibility)
    - Get your Supabase URL and anon key
+   - Create a storage bucket named `k-vault` in Supabase Storage
 
-4. **Set up Cloudflare R2**
-   - Go to [Cloudflare Dashboard](https://dash.cloudflare.com)
-   - Enable R2 (if not already enabled)
-   - Create a bucket named `k-vault`
-   - Create an API token with Read + Write permissions
-   - Save: `ACCOUNT_ID`, `ACCESS_KEY_ID`, `SECRET_ACCESS_KEY`
-
-5. **Configure environment variables**
+4. **Configure environment variables**
    Create a `.env.local` file:
    ```env
    # Supabase
    NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-   
-   # Cloudflare R2
-   R2_ACCOUNT_ID=your_cloudflare_account_id
-   R2_ACCESS_KEY_ID=your_r2_access_key_id
-   R2_SECRET_ACCESS_KEY=your_r2_secret_access_key
-   R2_BUCKET_NAME=k-vault
-   R2_ENDPOINT=https://your_account_id.r2.cloudflarestorage.com
    ```
 
 5. **Run the development server**
@@ -92,7 +79,9 @@ The application uses the following main tables:
 - `GET /api/courses` - List courses
 - `GET /api/resources` - List resources (with filters)
 - `POST /api/resources` - Create resource (admin only)
-- `POST /api/upload` - Upload file (admin only)
+- `POST /api/upload` - Upload file (admin only, files ≤ 50MB)
+- `POST /api/upload/chunk` - Upload file chunk (for files > 50MB)
+- `POST /api/upload/complete` - Complete chunked upload
 - `GET /api/download/[id]` - Get signed download URL
 - `GET /api/departments` - List departments
 - `GET /api/semesters` - List semesters
@@ -104,7 +93,8 @@ The application uses the following main tables:
 - Students can only view approved resources
 - File access via signed URLs (expires after 1 hour)
 - KAIST email validation on signup/login
-- Files stored in private Cloudflare R2 bucket
+- Files stored in private Supabase Storage bucket
+- Chunked uploads for files larger than 50MB (Supabase limit)
 - All downloads require authentication and authorization
 
 ## Deployment
@@ -121,7 +111,8 @@ The application uses the following main tables:
 The database and storage are managed by Supabase. Make sure to:
 - Enable daily backups
 - Configure RLS policies
-- Set up storage bucket with proper permissions
+- Set up storage bucket (`k-vault`) with proper permissions
+- Note: Supabase free tier has a 50MB limit per file upload, but supports chunked uploads for larger files
 
 ## License
 
