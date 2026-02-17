@@ -34,17 +34,32 @@ export async function GET(request: Request) {
       query = query.eq("approved", approved === "true")
     }
 
-    if (search) {
-      query = query.or(`title.ilike.%${search}%,course:courses.course_name.ilike.%${search}%`)
-    }
-
     const { data, error } = await query
 
     if (error) throw error
 
-    return NextResponse.json(data)
+    // Handle search after fetching because Supabase .or() doesn't work well with nested relations
+    let filteredData = data || []
+    if (search && search.trim()) {
+      const searchLower = search.toLowerCase().trim()
+      filteredData = (data || []).filter((resource: any) => {
+        const titleMatch = resource.title?.toLowerCase().includes(searchLower)
+        const courseCodeMatch = resource.course?.course_code?.toLowerCase().includes(searchLower)
+        const courseNameMatch = resource.course?.course_name?.toLowerCase().includes(searchLower)
+        const departmentCodeMatch = resource.course?.department?.code?.toLowerCase().includes(searchLower)
+        const departmentNameMatch = resource.course?.department?.name?.toLowerCase().includes(searchLower)
+        const professorNameMatch = resource.professor?.name?.toLowerCase().includes(searchLower)
+        
+        return titleMatch || courseCodeMatch || courseNameMatch || departmentCodeMatch || departmentNameMatch || professorNameMatch
+      })
+    }
+
+    // Always return an array, even if empty
+    return NextResponse.json(Array.isArray(filteredData) ? filteredData : [])
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error("Error fetching resources:", error)
+    // Return empty array on error instead of error object
+    return NextResponse.json([])
   }
 }
 

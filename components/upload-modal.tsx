@@ -101,46 +101,48 @@ export default function UploadModal({ onClose }: UploadModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Upload Resource</CardTitle>
-              <CardDescription>Add a new resource to the library</CardDescription>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto">
+      <Card className="w-full max-w-2xl max-h-[95vh] overflow-y-auto m-auto">
+        <CardHeader className="pb-3 sm:pb-6">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <CardTitle className="text-lg sm:text-xl">Upload Resource</CardTitle>
+              <CardDescription className="text-xs sm:text-sm">Add a new resource to the library</CardDescription>
             </div>
-            <Button variant="ghost" size="icon" onClick={onClose}>
+            <Button variant="ghost" size="icon" onClick={onClose} className="flex-shrink-0">
               <X className="h-4 w-4" />
             </Button>
           </div>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <CardContent className="px-3 sm:px-6">
+          <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="title">Title *</Label>
+              <Label htmlFor="title" className="text-sm">Title *</Label>
               <Input
                 id="title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g., Midterm Exam 2024"
                 required
+                className="text-sm sm:text-base"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="file">File *</Label>
+              <Label htmlFor="file" className="text-sm">File *</Label>
               <Input
                 id="file"
                 type="file"
                 accept=".pdf,.doc,.docx"
                 onChange={(e) => setFile(e.target.files?.[0] || null)}
                 required
+                className="text-xs sm:text-sm"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div className="space-y-2">
-                <Label htmlFor="course">Course *</Label>
+                <Label htmlFor="course" className="text-sm">Course *</Label>
                 <Select
                   id="course"
                   value={courseId}
@@ -149,6 +151,7 @@ export default function UploadModal({ onClose }: UploadModalProps) {
                     setProfessorId("")
                   }}
                   required
+                  className="text-sm sm:text-base"
                 >
                   <option value="">Select course</option>
                   {courses?.map((course: any) => (
@@ -160,12 +163,13 @@ export default function UploadModal({ onClose }: UploadModalProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="semester">Semester *</Label>
+                <Label htmlFor="semester" className="text-sm">Semester *</Label>
                 <Select
                   id="semester"
                   value={semesterId}
                   onChange={(e) => setSemesterId(e.target.value)}
                   required
+                  className="text-sm sm:text-base"
                 >
                   <option value="">Select semester</option>
                   {semesters?.map((semester: any) => (
@@ -177,14 +181,15 @@ export default function UploadModal({ onClose }: UploadModalProps) {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div className="space-y-2">
-                <Label htmlFor="type">Resource Type *</Label>
+                <Label htmlFor="type" className="text-sm">Resource Type *</Label>
                 <Select
                   id="type"
                   value={type}
                   onChange={(e) => setType(e.target.value as ResourceType)}
                   required
+                  className="text-sm sm:text-base"
                 >
                   {resourceTypes.map((t) => (
                     <option key={t} value={t}>
@@ -195,12 +200,13 @@ export default function UploadModal({ onClose }: UploadModalProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="professor">Professor (Optional)</Label>
+                <Label htmlFor="professor" className="text-sm">Professor (Optional)</Label>
                 <Select
                   id="professor"
                   value={professorId}
                   onChange={(e) => setProfessorId(e.target.value)}
                   disabled={!courseId}
+                  className="text-sm sm:text-base"
                 >
                   <option value="">Select professor</option>
                   {professors?.map((professor: any) => (
@@ -213,16 +219,16 @@ export default function UploadModal({ onClose }: UploadModalProps) {
             </div>
 
             {error && (
-              <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+              <div className="text-xs sm:text-sm text-destructive bg-destructive/10 p-2 sm:p-3 rounded-md">
                 {error}
               </div>
             )}
 
-            <div className="flex gap-2 justify-end">
-              <Button type="button" variant="outline" onClick={onClose}>
+            <div className="flex flex-col sm:flex-row gap-2 sm:justify-end pt-2">
+              <Button type="button" variant="outline" onClick={onClose} className="w-full sm:w-auto">
                 Cancel
               </Button>
-              <Button type="submit" disabled={uploading}>
+              <Button type="submit" disabled={uploading} className="w-full sm:w-auto">
                 <UploadIcon className="h-4 w-4 mr-2" />
                 {uploading ? "Uploading..." : "Upload"}
               </Button>

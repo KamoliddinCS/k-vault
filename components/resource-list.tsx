@@ -35,6 +35,9 @@ const resourceTypeColors: Record<ResourceType, string> = {
 export default function ResourceList({ resources, userRole }: ResourceListProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
+  // Ensure resources is always an array
+  const resourcesArray = Array.isArray(resources) ? resources : []
+
   const handleDownload = async (resourceId: string, title: string) => {
     try {
       const res = await fetch(`/api/download/${resourceId}`)
@@ -64,7 +67,7 @@ export default function ResourceList({ resources, userRole }: ResourceListProps)
     }
   }
 
-  if (resources.length === 0) {
+  if (!resourcesArray || resourcesArray.length === 0) {
     return (
       <Card>
         <CardContent className="py-12 text-center">
@@ -76,44 +79,46 @@ export default function ResourceList({ resources, userRole }: ResourceListProps)
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      {resources.map((resource) => (
-        <Card key={resource.id} className="hover:shadow-lg transition-shadow">
-          <CardHeader>
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <CardTitle className="text-lg mb-2">{resource.title}</CardTitle>
-                <CardDescription className="flex items-center gap-2">
-                  <BookOpen className="h-4 w-4" />
-                  {resource.course?.course_code} - {resource.course?.course_name}
+    <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {resourcesArray.map((resource) => (
+        <Card key={resource.id} className="hover:shadow-lg transition-shadow flex flex-col">
+          <CardHeader className="pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <CardTitle className="text-base sm:text-lg mb-1 sm:mb-2 line-clamp-2">{resource.title}</CardTitle>
+                <CardDescription className="flex items-center gap-2 text-xs sm:text-sm">
+                  <BookOpen className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
+                  <span className="truncate">
+                    {resource.course?.course_code} - {resource.course?.course_name}
+                  </span>
                 </CardDescription>
               </div>
               <Badge
-                className={`${resourceTypeColors[resource.type]} text-white`}
+                className={`${resourceTypeColors[resource.type]} text-white text-xs flex-shrink-0 self-start`}
               >
                 {resourceTypeLabels[resource.type]}
               </Badge>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-2 mb-4">
+          <CardContent className="pt-0 flex-1 flex flex-col">
+            <div className="space-y-1.5 sm:space-y-2 mb-3 sm:mb-4 flex-1">
               {resource.semester && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Calendar className="h-4 w-4" />
-                  {resource.semester.year} {resource.semester.term}
+                <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+                  <Calendar className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
+                  <span className="truncate">{resource.semester.year} {resource.semester.term}</span>
                 </div>
               )}
               {resource.professor && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <User className="h-4 w-4" />
-                  {resource.professor.name}
+                <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+                  <User className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
+                  <span className="truncate">{resource.professor.name}</span>
                 </div>
               )}
               <div className="text-xs text-muted-foreground">
                 Uploaded {format(new Date(resource.created_at), "MMM d, yyyy")}
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 mt-auto">
               <Button
                 onClick={() => handlePreview(resource.id)}
                 variant="outline"
