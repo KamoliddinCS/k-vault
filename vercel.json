@@ -3,5 +3,10 @@
     "app/api/upload/route.ts": {
       "maxDuration": 60
     }
-  }
+  },
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "nodeVersion": "20.x"
 }

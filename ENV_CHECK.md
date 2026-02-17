@@ -156,7 +156,30 @@ Based on your `.env` file:
 - ✅ Uses `https://` protocol
 - ✅ No trailing slash
 
+## ⚠️ IMPORTANT: Node.js Version Issue
+
+**If you're seeing SSL handshake failures in production:**
+
+Your production environment is using **Node.js v24.13.0**, which has known SSL/TLS compatibility issues with Cloudflare R2.
+
+### Fix for Vercel:
+
+1. **Set Node.js version in Vercel:**
+   - Go to Vercel Dashboard → Your Project → Settings → General
+   - Under "Node.js Version", select **20.x** (or 18.x)
+   - Redeploy your application
+
+2. **Or use `vercel.json` (already configured):**
+   - The `vercel.json` file now specifies `"nodeVersion": "20.x"`
+   - Redeploy to apply the change
+
+3. **Verify after deployment:**
+   - Visit `/api/test-r2-ssl` again
+   - Check that `nodeVersion` shows `v20.x.x` or `v18.x.x`
+   - SSL connection should work
+
 **Next steps:**
-1. Verify all other variables are set (ACCESS_KEY_ID, SECRET_ACCESS_KEY, BUCKET_NAME)
-2. Test with `/api/test-r2` endpoint
-3. Check server logs for any configuration warnings
+1. Update Node.js version in Vercel to 20.x
+2. Redeploy your application
+3. Test with `/api/test-r2-ssl` endpoint
+4. Verify all other variables are set (ACCESS_KEY_ID, SECRET_ACCESS_KEY, BUCKET_NAME)
