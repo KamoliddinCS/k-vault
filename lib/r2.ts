@@ -27,7 +27,7 @@ export function getR2Client(): S3Client {
   // Construct endpoint URL
   let endpoint: string
   if (process.env.R2_ENDPOINT) {
-    endpoint = process.env.R2_ENDPOINT
+    endpoint = process.env.R2_ENDPOINT.trim()
   } else if (process.env.R2_ACCOUNT_ID) {
     endpoint = `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`
   } else {
@@ -41,6 +41,14 @@ export function getR2Client(): S3Client {
 
   // Remove trailing slash if present
   endpoint = endpoint.replace(/\/$/, '')
+  
+  // Validate endpoint format
+  // Should be: https://<account-id>.r2.cloudflarestorage.com
+  const endpointPattern = /^https:\/\/[a-f0-9]{32}\.r2\.cloudflarestorage\.com$/
+  if (!endpointPattern.test(endpoint)) {
+    console.warn(`R2_ENDPOINT format may be incorrect: ${endpoint}`)
+    console.warn(`Expected format: https://<32-char-account-id>.r2.cloudflarestorage.com`)
+  }
 
   console.log(`R2 Client Configuration:
     Endpoint: ${endpoint}
@@ -57,17 +65,35 @@ export function getR2Client(): S3Client {
   
   console.log(`Using ${usePathStyle ? 'path-style' : 'virtual-hosted'} addressing`)
   
-  // Use default S3Client configuration
+  // Log Node.js version for debugging
+  const nodeVersion = process.version
+  console.log(`Node.js version: ${nodeVersion}`)
+  
+  // Check Node.js version compatibility
+  const majorVersion = parseInt(nodeVersion.slice(1).split('.')[0])
+  if (majorVersion < 16) {
+    console.warn(`Node.js version ${nodeVersion} may have SSL/TLS compatibility issues. Consider upgrading to Node.js 18+`)
+  }
+  
+  // Check SSL/TLS configuration
+  const tlsRejectUnauthorized = process.env.NODE_TLS_REJECT_UNAUTHORIZED
+  if (tlsRejectUnauthorized === '0') {
+    console.warn("NODE_TLS_REJECT_UNAUTHORIZED is set to 0 - SSL certificate validation is disabled (not recommended for production)")
+  }
+  
+  // Use default S3Client configuration with explicit SSL settings
   // Note: SSL handshake failures with R2 are often due to Node.js version
   // or environment issues. Try updating Node.js to 18+ if errors persist.
   return new S3Client({
-    region: "auto",
+    region: "auto", // Cloudflare R2 doesn't require a specific region
     endpoint: endpoint,
     forcePathStyle: usePathStyle,
     credentials: {
       accessKeyId: process.env.R2_ACCESS_KEY_ID,
       secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
     },
+    // SSL is enabled by default, but we can be explicit
+    // Note: sslEnabled is not a valid S3Client option, SSL is always enabled for https endpoints
   })
 }
 
