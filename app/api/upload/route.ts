@@ -1,5 +1,8 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
+import { PutObjectCommand } from "@aws-sdk/client-s3"
+import { r2, R2_BUCKET_NAME } from "@/lib/r2"
+import { randomUUID } from "node:crypto"
 
 export async function POST(request: Request) {
   try {
@@ -58,26 +61,24 @@ export async function POST(request: Request) {
       )
     }
 
-    // Create file path: k-vault/{dept_code}/{course_code}/{year}-{term}/{filename}
+    // Create file key: {dept_code}/{course_code}/{year}-{term}/{uuid}-{filename}
     const deptCode = (course.department as any)?.code || "MISC"
-    const filePath = `k-vault/${deptCode}/${course.course_code}/${semester.year}-${semester.term}/${file.name}`
+    const fileKey = `${deptCode}/${course.course_code}/${semester.year}-${semester.term}/${randomUUID()}-${file.name}`
 
-    // Upload file to Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from("k-vault")
-      .upload(filePath, file, {
-        cacheControl: "3600",
-        upsert: false,
+    // Upload file to Cloudflare R2
+    const fileBuffer = Buffer.from(await file.arrayBuffer())
+    
+    await r2.send(
+      new PutObjectCommand({
+        Bucket: R2_BUCKET_NAME,
+        Key: fileKey,
+        Body: fileBuffer,
+        ContentType: file.type || "application/octet-stream",
+        CacheControl: "max-age=3600",
       })
+    )
 
-    if (uploadError) throw uploadError
-
-    // Get public URL (we'll use signed URLs for private access)
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from("k-vault").getPublicUrl(filePath)
-
-    // Create resource record
+    // Create resource record in Supabase (metadata only)
     const { data: resource, error: resourceError } = await supabase
       .from("resources")
       .insert({
@@ -86,7 +87,9 @@ export async function POST(request: Request) {
         professor_id: professorId || null,
         title,
         type,
-        file_url: filePath, // Store path, not public URL
+        file_url: fileKey, // Keep for backward compatibility
+        file_key: fileKey, // R2 key
+        storage: "r2", // Mark as R2 storage
         uploaded_by: user.id,
         approved: true,
       })
@@ -95,8 +98,9 @@ export async function POST(request: Request) {
 
     if (resourceError) throw resourceError
 
-    return NextResponse.json({ resource, filePath }, { status: 201 })
+    return NextResponse.json({ resource, fileKey }, { status: 201 })
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error("Upload error:", error)
+    return NextResponse.json({ error: error.message || "Upload failed" }, { status: 500 })
   }
 }

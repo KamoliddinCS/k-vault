@@ -5,9 +5,10 @@ A scalable, secure internal resource platform for KAIST students.
 ## Tech Stack
 
 - **Frontend**: Next.js 14 (App Router), TypeScript, TailwindCSS, shadcn/ui
-- **Backend**: Supabase (PostgreSQL, Storage, Auth)
+- **Backend**: Supabase (PostgreSQL, Auth)
+- **Storage**: Cloudflare R2 (S3-compatible object storage)
 - **State Management**: React Query
-- **Hosting**: Vercel (Frontend), Supabase Cloud (Backend)
+- **Hosting**: Vercel (Frontend), Supabase Cloud (Database), Cloudflare R2 (Files)
 
 ## Features
 
@@ -40,15 +41,32 @@ A scalable, secure internal resource platform for KAIST students.
 
 3. **Set up Supabase**
    - Create a new Supabase project
-   - Run the migration file: `supabase/migrations/001_initial_schema.sql`
-   - Create a storage bucket named `k-vault` (private bucket)
+   - Run the migration files in order:
+     - `supabase/migrations/001_initial_schema.sql`
+     - `supabase/migrations/002_admin_policies.sql`
+     - `supabase/migrations/003_add_r2_storage.sql`
    - Get your Supabase URL and anon key
 
-4. **Configure environment variables**
+4. **Set up Cloudflare R2**
+   - Go to [Cloudflare Dashboard](https://dash.cloudflare.com)
+   - Enable R2 (if not already enabled)
+   - Create a bucket named `k-vault`
+   - Create an API token with Read + Write permissions
+   - Save: `ACCOUNT_ID`, `ACCESS_KEY_ID`, `SECRET_ACCESS_KEY`
+
+5. **Configure environment variables**
    Create a `.env.local` file:
    ```env
+   # Supabase
    NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+   
+   # Cloudflare R2
+   R2_ACCOUNT_ID=your_cloudflare_account_id
+   R2_ACCESS_KEY_ID=your_r2_access_key_id
+   R2_SECRET_ACCESS_KEY=your_r2_secret_access_key
+   R2_BUCKET_NAME=k-vault
+   R2_ENDPOINT=https://your_account_id.r2.cloudflarestorage.com
    ```
 
 5. **Run the development server**
@@ -86,6 +104,8 @@ The application uses the following main tables:
 - Students can only view approved resources
 - File access via signed URLs (expires after 1 hour)
 - KAIST email validation on signup/login
+- Files stored in private Cloudflare R2 bucket
+- All downloads require authentication and authorization
 
 ## Deployment
 

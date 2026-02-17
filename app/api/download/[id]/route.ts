@@ -1,5 +1,8 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
+import { GetObjectCommand } from "@aws-sdk/client-s3"
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
+import { r2, R2_BUCKET_NAME } from "@/lib/r2"
 
 export async function GET(
   request: Request,
@@ -44,16 +47,42 @@ export async function GET(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
-    // Generate signed URL (valid for 1 hour)
-    const { data: signedUrlData, error: signedUrlError } =
-      await supabase.storage
-        .from("k-vault")
-        .createSignedUrl(resource.file_url, 3600)
+    // Determine storage type and generate signed URL
+    const storageType = resource.storage || "r2" // Default to R2 for new uploads
+    const fileKey = resource.file_key || resource.file_url
 
-    if (signedUrlError) throw signedUrlError
+    if (!fileKey) {
+      return NextResponse.json(
+        { error: "File key not found" },
+        { status: 404 }
+      )
+    }
 
-    return NextResponse.json({ url: signedUrlData.signedUrl })
+    if (storageType === "r2") {
+      // Generate R2 signed URL (valid for 1 hour)
+      const command = new GetObjectCommand({
+        Bucket: R2_BUCKET_NAME,
+        Key: fileKey,
+      })
+
+      const signedUrl = await getSignedUrl(r2, command, {
+        expiresIn: 3600, // 1 hour
+      })
+
+      return NextResponse.json({ url: signedUrl })
+    } else {
+      // Fallback to Supabase Storage for legacy files
+      const { data: signedUrlData, error: signedUrlError } =
+        await supabase.storage
+          .from("k-vault")
+          .createSignedUrl(fileKey, 3600)
+
+      if (signedUrlError) throw signedUrlError
+
+      return NextResponse.json({ url: signedUrlData.signedUrl })
+    }
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error("Download error:", error)
+    return NextResponse.json({ error: error.message || "Download failed" }, { status: 500 })
   }
 }

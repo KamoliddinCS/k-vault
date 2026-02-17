@@ -54,6 +54,8 @@ export interface Resource {
   title: string
   type: ResourceType
   file_url: string
+  file_key?: string | null
+  storage?: string | null
   uploaded_by: string
   approved: boolean
   created_at: string
