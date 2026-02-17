@@ -169,8 +169,9 @@ Your production environment is using **Node.js v24.13.0**, which has known SSL/T
    - Under "Node.js Version", select **20.x** (or 18.x)
    - Redeploy your application
 
-2. **Or use `vercel.json` (already configured):**
-   - The `vercel.json` file now specifies `"nodeVersion": "20.x"`
+2. **Or use `package.json` engines field (already configured):**
+   - The `package.json` file now specifies `"engines": { "node": ">=18.0.0 <21.0.0" }`
+   - Vercel will automatically use Node.js 20.x based on this
    - Redeploy to apply the change
 
 3. **Verify after deployment:**
