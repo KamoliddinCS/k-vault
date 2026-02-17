@@ -106,10 +106,9 @@ export async function POST(request: Request) {
       )
     }
     
-    let bucketName: string
     try {
       const r2 = getR2Client()
-      bucketName = getBucketName()
+      const bucketName = getBucketName()
       
       console.log(`Uploading to R2 bucket: ${bucketName}, key: ${fileKey}`)
       console.log(`R2 endpoint: ${process.env.R2_ENDPOINT || `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`}`)
@@ -159,7 +158,7 @@ export async function POST(request: Request) {
       
       // Check for bucket errors
       if (r2Error.name === "NoSuchBucket") {
-        const bucket = bucketName || process.env.R2_BUCKET_NAME || "unknown"
+        const bucket = process.env.R2_BUCKET_NAME || "unknown"
         return NextResponse.json(
           { error: `R2 bucket "${bucket}" not found. Please check your bucket name.` },
           { status: 500 }
