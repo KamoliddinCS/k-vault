@@ -3,7 +3,7 @@ import https from "https"
 import { getR2Client, getBucketName } from "@/lib/r2"
 
 // Test endpoint to verify SSL/TLS connectivity to R2
-export async function GET() {
+export async function GET(): Promise<NextResponse> {
   const diagnostics: any = {
     nodeVersion: process.version,
     nodeMajorVersion: parseInt(process.version.slice(1).split('.')[0]),
@@ -23,7 +23,7 @@ export async function GET() {
   const endpoint = process.env.R2_ENDPOINT || `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`
   const endpointUrl = new URL(endpoint)
   
-  return new Promise((resolve) => {
+  return new Promise<NextResponse>((resolve) => {
     const options = {
       hostname: endpointUrl.hostname,
       port: 443,
