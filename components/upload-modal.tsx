@@ -9,6 +9,7 @@ import { Select } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { X, Upload as UploadIcon } from "lucide-react"
 import { ResourceType } from "@/lib/types"
+import { createClient } from "@/lib/supabase/client"
 
 interface UploadModalProps {
   onClose: () => void
@@ -81,15 +82,15 @@ export default function UploadModal({ onClose }: UploadModalProps) {
     setError(null)
 
     try {
-      const CHUNK_SIZE = 50 * 1024 * 1024 // 50MB chunks (Supabase limit)
+      const MAX_SINGLE_UPLOAD_SIZE = 40 * 1024 * 1024 // 40MB (safety margin for Supabase's 50MB limit)
       const fileSize = file.size
-      const useChunkedUpload = fileSize > CHUNK_SIZE
+      const useChunkedUpload = fileSize > MAX_SINGLE_UPLOAD_SIZE
 
       if (useChunkedUpload) {
-        // Chunked upload for files > 50MB
+        // Chunked upload for files > 40MB (uploads directly to Supabase, bypassing Vercel)
         await handleChunkedUpload(file, title, courseId, semesterId, professorId, type)
       } else {
-        // Single upload for files <= 50MB
+        // Single upload for files <= 40MB
         await handleSingleUpload(file, title, courseId, semesterId, professorId, type)
       }
 
@@ -151,9 +152,11 @@ export default function UploadModal({ onClose }: UploadModalProps) {
     type: ResourceType
   ) => {
       // Use 40MB chunks for safety margin (Supabase limit is 50MB)
+      // But Vercel has a 4.5MB body limit, so we upload directly to Supabase
       const CHUNK_SIZE = 40 * 1024 * 1024 // 40MB
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
       const uploadId = crypto.randomUUID()
+      const supabase = createClient()
 
       console.log(`Starting chunked upload: ${totalChunks} chunks for ${(file.size / 1024 / 1024).toFixed(2)}MB file`)
       
@@ -171,7 +174,7 @@ export default function UploadModal({ onClose }: UploadModalProps) {
         status: "uploading",
       })
 
-      // Upload each chunk with retry logic
+      // Upload each chunk directly to Supabase Storage with retry logic
       const MAX_RETRIES = 3
       
       for (let i = 0; i < totalChunks; i++) {
@@ -179,83 +182,28 @@ export default function UploadModal({ onClose }: UploadModalProps) {
         const end = Math.min(start + CHUNK_SIZE, file.size)
         const chunk = file.slice(start, end)
         const chunkSize = chunk.size
+        const chunkPath = `chunks/${uploadId}/${i}-${totalChunks}.part`
 
         let retryCount = 0
         let chunkUploaded = false
 
         while (retryCount < MAX_RETRIES && !chunkUploaded) {
           try {
-            const chunkFormData = new FormData()
-            chunkFormData.append("chunk", chunk)
-            chunkFormData.append("uploadId", uploadId)
-            chunkFormData.append("chunkIndex", i.toString())
-            chunkFormData.append("totalChunks", totalChunks.toString())
-            chunkFormData.append("fileName", file.name)
-
-            // Use XMLHttpRequest for progress tracking within chunk
-            await new Promise<void>((resolve, reject) => {
-              const xhr = new XMLHttpRequest()
-              let lastChunkBytes = 0
-
-              // Track upload progress for this chunk
-              xhr.upload.addEventListener("progress", (e) => {
-                if (e.lengthComputable) {
-                  const chunkProgress = e.loaded / e.total
-                  const currentChunkBytes = chunkProgress * chunkSize
-                  const totalBytesUploaded = completedBytes + currentChunkBytes
-                  
-                  const now = Date.now()
-                  const timeElapsed = (now - lastUpdateTime) / 1000 // seconds
-                  
-                  if (timeElapsed > 0.5) { // Update every 500ms
-                    const bytesDelta = currentChunkBytes - lastChunkBytes
-                    const speed = bytesDelta / timeElapsed
-                    const remainingBytes = file.size - totalBytesUploaded
-                    const timeRemaining = speed > 0 ? remainingBytes / speed : 0
-
-                    setUploadProgress({
-                      current: i,
-                      total: totalChunks,
-                      bytesUploaded: totalBytesUploaded,
-                      totalBytes: file.size,
-                      speed,
-                      timeRemaining,
-                      status: "uploading",
-                    })
-
-                    lastUpdateTime = now
-                    lastChunkBytes = currentChunkBytes
-                  }
-                }
+            // Upload directly to Supabase Storage from client
+            // This bypasses Vercel's body size limit
+            const { data: uploadData, error: uploadError } = await supabase.storage
+              .from("k-vault")
+              .upload(chunkPath, chunk, {
+                cacheControl: "3600",
+                upsert: false,
               })
 
-              xhr.addEventListener("load", () => {
-                if (xhr.status >= 200 && xhr.status < 300) {
-                  completedBytes += chunkSize
-                  resolve()
-                } else {
-                  try {
-                    const data = JSON.parse(xhr.responseText)
-                    reject(new Error(data.error || `HTTP ${xhr.status}`))
-                  } catch {
-                    reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`))
-                  }
-                }
-              })
-
-              xhr.addEventListener("error", () => {
-                reject(new Error("Network error during chunk upload"))
-              })
-
-              xhr.addEventListener("abort", () => {
-                reject(new Error("Upload aborted"))
-              })
-
-              xhr.open("POST", "/api/upload/chunk")
-              xhr.send(chunkFormData)
-            })
+            if (uploadError) {
+              throw new Error(uploadError.message)
+            }
 
             chunkUploaded = true
+            completedBytes += chunkSize
             console.log(`Uploaded chunk ${i + 1}/${totalChunks}`)
             
             // Update progress after chunk completes
