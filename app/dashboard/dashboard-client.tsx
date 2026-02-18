@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Select } from "@/components/ui/select"
-import { LogOut, Search, Upload, FileText, BookOpen, GraduationCap, Settings, Grid3x3, List } from "lucide-react"
+import { LogOut, Search, Upload, FileText, BookOpen, Settings, Grid3x3, List } from "lucide-react"
+import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { Resource, ResourceType } from "@/lib/types"
 import ResourceList from "@/components/resource-list"
@@ -92,7 +93,14 @@ export default function DashboardClient({ userRole }: DashboardClientProps) {
         <div className="container mx-auto px-3 sm:px-4 py-3 sm:py-4">
           <div className="flex items-center justify-between gap-2 sm:gap-4">
             <div className="flex items-center gap-2 flex-shrink-0">
-              <GraduationCap className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
+              <Image
+                src="/kvault.png"
+                alt="K-Vault Logo"
+                width={32}
+                height={32}
+                className="h-5 w-5 sm:h-6 sm:w-6 object-contain"
+                priority
+              />
               <h1 className="text-xl sm:text-2xl font-bold">K-Vault</h1>
             </div>
             <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ThemeToggle } from "@/components/theme-toggle"
+import Image from "next/image"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -89,10 +90,20 @@ export default function LoginPage() {
       </div>
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle className="text-2xl font-bold text-center">K-Vault</CardTitle>
-          <CardDescription className="text-center">
-            KAIST Resource Platform
-          </CardDescription>
+          <div className="flex flex-col items-center gap-3 mb-2">
+            <Image
+              src="/kvault.png"
+              alt="K-Vault Logo"
+              width={64}
+              height={64}
+              className="h-16 w-16 object-contain"
+              priority
+            />
+            <CardTitle className="text-2xl font-bold text-center">K-Vault</CardTitle>
+            <CardDescription className="text-center">
+              KAIST Resource Platform
+            </CardDescription>
+          </div>
         </CardHeader>
         <CardContent>
           <form className="space-y-4">

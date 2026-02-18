@@ -8,6 +8,10 @@ const inter = Inter({ subsets: ["latin"] })
 export const metadata: Metadata = {
   title: "K-Vault - KAIST Resource Platform",
   description: "A scalable, secure internal resource platform for KAIST students",
+  icons: {
+    icon: "/kvault.png",
+    apple: "/kvault.png",
+  },
 }
 
 export default function RootLayout({
