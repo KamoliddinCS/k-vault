@@ -96,9 +96,10 @@ export default function DashboardClient({ userRole }: DashboardClientProps) {
               <Image
                 src="/kvault.png"
                 alt="K-Vault Logo"
-                width={32}
-                height={32}
-                className="h-5 w-5 sm:h-6 sm:w-6 object-contain"
+                width={48}
+                height={48}
+                className="h-8 w-8 sm:h-10 sm:w-10 object-contain"
+                quality={100}
                 priority
               />
               <h1 className="text-xl sm:text-2xl font-bold">K-Vault</h1>
