@@ -58,9 +58,14 @@ K-Vault is a modern web application designed to help KAIST students access and m
 
 4. Run database migrations:
    - Create a Supabase project at [supabase.com](https://supabase.com)
-   - Run the migration files in `supabase/migrations/` in order
-   - Create a storage bucket named `k-vault` in Supabase Storage
-   - Configure storage policies for authenticated users
+   - Run the migration files in `supabase/migrations/` in order:
+     - `001_initial_schema.sql`
+     - `002_admin_policies.sql`
+     - `003_add_r2_storage.sql`
+     - `004_add_feedback_table.sql`
+     - `005_add_storage_policies.sql` (for storage bucket RLS)
+   - Create a storage bucket named `k-vault` in Supabase Storage (private bucket)
+   - Run `005_add_storage_policies.sql` to set up storage RLS policies
 
 5. Start the development server:
    ```bash
