@@ -85,11 +85,12 @@ export async function GET(request: Request) {
     const offset = parseInt(searchParams.get("offset") || "0")
 
     // Build query
+    // Note: feedback.user_id references auth.users, but we join with public.users which has the same id
     let query = supabase
       .from("feedback")
       .select(`
         *,
-        user:users!feedback_user_id_fkey(
+        user:users!inner(
           id,
           email
         )
