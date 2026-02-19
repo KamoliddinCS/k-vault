@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Edit, Trash2, X, Save } from "lucide-react"
+import { Plus, Edit, Trash2, X, Save, MessageSquare } from "lucide-react"
 import { SemesterTerm } from "@/lib/types"
 import { useToast, ToastContainer } from "@/components/ui/toast"
 
@@ -19,7 +19,7 @@ interface AdminPanelProps {
 export default function AdminPanel({ onClose }: AdminPanelProps) {
   const queryClient = useQueryClient()
   const toast = useToast()
-  const [activeTab, setActiveTab] = useState<"departments" | "courses" | "semesters" | "professors" | "types">("departments")
+  const [activeTab, setActiveTab] = useState<"departments" | "courses" | "semesters" | "professors" | "types" | "feedback">("departments")
   const [editingId, setEditingId] = useState<string | null>(null)
 
   // Fetch departments for courses and professors
@@ -56,6 +56,16 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
       const res = await fetch("/api/professors")
       return res.json()
     },
+  })
+
+  // Fetch feedback
+  const { data: feedbackData, refetch: refetchFeedback } = useQuery({
+    queryKey: ["feedback"],
+    queryFn: async () => {
+      const res = await fetch("/api/feedback")
+      return res.json()
+    },
+    enabled: activeTab === "feedback",
   })
 
   // Department mutations
@@ -319,19 +329,20 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
         <CardContent className="px-3 sm:px-6">
           {/* Tabs */}
           <div className="flex flex-wrap gap-1 sm:gap-2 mb-4 sm:mb-6 border-b overflow-x-auto">
-            {(["departments", "courses", "semesters", "professors", "types"] as const).map((tab) => (
+            {(["departments", "courses", "semesters", "professors", "types", "feedback"] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => {
                   setActiveTab(tab)
                   setEditingId(null)
                 }}
-                className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5 ${
                   activeTab === tab
                     ? "border-primary text-primary"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 }`}
               >
+                {tab === "feedback" && <MessageSquare className="h-3 w-3 sm:h-4 sm:w-4" />}
                 {tab.charAt(0).toUpperCase() + tab.slice(1)}
               </button>
             ))}
@@ -402,6 +413,15 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                 ))}
               </div>
             </div>
+          )}
+
+          {/* Feedback Tab */}
+          {activeTab === "feedback" && (
+            <FeedbackManagement
+              feedback={feedbackData?.feedback || []}
+              total={feedbackData?.total || 0}
+              onRefresh={refetchFeedback}
+            />
           )}
         </CardContent>
       </Card>
@@ -751,6 +771,248 @@ function SemesterManagement({
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+// Feedback Management Component
+function FeedbackManagement({
+  feedback,
+  total,
+  onRefresh,
+}: {
+  feedback: Array<{
+    id: string
+    type: "suggestion" | "bug" | "contribution"
+    message: string
+    created_at: string
+    user?: {
+      id: string
+      email: string
+    }
+  }>
+  total: number
+  onRefresh: () => void
+}) {
+  const [filterType, setFilterType] = useState<string>("all")
+  const [selectedFeedback, setSelectedFeedback] = useState<string | null>(null)
+
+  const filteredFeedback = filterType === "all"
+    ? feedback
+    : feedback.filter((f) => f.type === filterType)
+
+  const typeLabels = {
+    suggestion: "💡 Suggestion",
+    bug: "🐛 Bug Report",
+    contribution: "🤝 Contribution",
+  }
+
+  const typeColors = {
+    suggestion: "bg-blue-500",
+    bug: "bg-red-500",
+    contribution: "bg-green-500",
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
+        <div>
+          <h3 className="text-base sm:text-lg font-semibold">User Feedback</h3>
+          <p className="text-xs sm:text-sm text-muted-foreground">
+            {total} total feedback submission{total !== 1 ? "s" : ""}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+            className="text-xs sm:text-sm"
+          >
+            <option value="all">All Types</option>
+            <option value="suggestion">Suggestions</option>
+            <option value="bug">Bug Reports</option>
+            <option value="contribution">Contributions</option>
+          </Select>
+          <Button variant="outline" size="sm" onClick={onRefresh} className="text-xs sm:text-sm">
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {filteredFeedback.length === 0 ? (
+        <Card>
+          <CardContent className="py-8 text-center">
+            <MessageSquare className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+            <p className="text-sm text-muted-foreground">No feedback found</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {filteredFeedback.map((item) => (
+            <Card key={item.id} className="hover:shadow-md transition-shadow">
+              <CardContent className="p-3 sm:p-4">
+                <div className="flex items-start justify-between gap-3 sm:gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge className={`${typeColors[item.type]} text-white text-xs`}>
+                        {typeLabels[item.type]}
+                      </Badge>
+                      {item.user && (
+                        <span className="text-xs text-muted-foreground">
+                          {item.user.email}
+                        </span>
+                      )}
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(item.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <p className="text-sm whitespace-pre-wrap break-words">
+                      {selectedFeedback === item.id
+                        ? item.message
+                        : item.message.length > 200
+                        ? `${item.message.substring(0, 200)}...`
+                        : item.message}
+                    </p>
+                    {item.message.length > 200 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="mt-2 text-xs"
+                        onClick={() =>
+                          setSelectedFeedback(selectedFeedback === item.id ? null : item.id)
+                        }
+                      >
+                        {selectedFeedback === item.id ? "Show Less" : "Show More"}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Feedback Management Component
+function FeedbackManagement({
+  feedback,
+  total,
+  onRefresh,
+}: {
+  feedback: Array<{
+    id: string
+    type: "suggestion" | "bug" | "contribution"
+    message: string
+    created_at: string
+    user?: {
+      id: string
+      email: string
+    }
+  }>
+  total: number
+  onRefresh: () => void
+}) {
+  const [filterType, setFilterType] = useState<string>("all")
+  const [selectedFeedback, setSelectedFeedback] = useState<string | null>(null)
+
+  const filteredFeedback = filterType === "all"
+    ? feedback
+    : feedback.filter((f) => f.type === filterType)
+
+  const typeLabels = {
+    suggestion: "💡 Suggestion",
+    bug: "🐛 Bug Report",
+    contribution: "🤝 Contribution",
+  }
+
+  const typeColors = {
+    suggestion: "bg-blue-500",
+    bug: "bg-red-500",
+    contribution: "bg-green-500",
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
+        <div>
+          <h3 className="text-base sm:text-lg font-semibold">User Feedback</h3>
+          <p className="text-xs sm:text-sm text-muted-foreground">
+            {total} total feedback submission{total !== 1 ? "s" : ""}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+            className="text-xs sm:text-sm"
+          >
+            <option value="all">All Types</option>
+            <option value="suggestion">Suggestions</option>
+            <option value="bug">Bug Reports</option>
+            <option value="contribution">Contributions</option>
+          </Select>
+          <Button variant="outline" size="sm" onClick={onRefresh} className="text-xs sm:text-sm">
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {filteredFeedback.length === 0 ? (
+        <Card>
+          <CardContent className="py-8 text-center">
+            <MessageSquare className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+            <p className="text-sm text-muted-foreground">No feedback found</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {filteredFeedback.map((item) => (
+            <Card key={item.id} className="hover:shadow-md transition-shadow">
+              <CardContent className="p-3 sm:p-4">
+                <div className="flex items-start justify-between gap-3 sm:gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      <Badge className={`${typeColors[item.type]} text-white text-xs`}>
+                        {typeLabels[item.type]}
+                      </Badge>
+                      {item.user && (
+                        <span className="text-xs text-muted-foreground">
+                          {item.user.email}
+                        </span>
+                      )}
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(item.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <p className="text-sm whitespace-pre-wrap break-words">
+                      {selectedFeedback === item.id
+                        ? item.message
+                        : item.message.length > 200
+                        ? `${item.message.substring(0, 200)}...`
+                        : item.message}
+                    </p>
+                    {item.message.length > 200 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="mt-2 text-xs"
+                        onClick={() =>
+                          setSelectedFeedback(selectedFeedback === item.id ? null : item.id)
+                        }
+                      >
+                        {selectedFeedback === item.id ? "Show Less" : "Show More"}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

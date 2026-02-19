@@ -22,33 +22,108 @@ export async function POST(request: Request) {
       )
     }
 
-    // Get user email for feedback
-    const { data: userData } = await supabase.auth.getUser()
-    const userEmail = userData.user?.email || "unknown"
+    // Validate feedback type
+    if (!["suggestion", "bug", "contribution"].includes(type)) {
+      return NextResponse.json(
+        { error: "Invalid feedback type" },
+        { status: 400 }
+      )
+    }
 
-    // Store feedback in a table (you'll need to create this table)
-    // For now, we'll log it and return success
-    // In production, you might want to:
-    // 1. Store in a feedback table in Supabase
-    // 2. Send email notification to admin
-    // 3. Create GitHub issue automatically
+    // Store feedback in the database
+    const { data: feedback, error: feedbackError } = await supabase
+      .from("feedback")
+      .insert({
+        user_id: user.id,
+        type,
+        message: message.trim(),
+      })
+      .select()
+      .single()
 
-    console.log("Feedback received:", {
-      user: userEmail,
-      type,
-      message: message.trim(),
-      timestamp: new Date().toISOString(),
-    })
+    if (feedbackError) {
+      console.error("Failed to store feedback:", feedbackError)
+      throw feedbackError
+    }
 
-    // TODO: Create feedback table and store this
-    // For now, we'll just log it
-    // You can create a feedback table with columns: id, user_id, type, message, created_at
-
-    return NextResponse.json({ success: true, message: "Feedback received" }, { status: 201 })
+    return NextResponse.json({ success: true, feedback }, { status: 201 })
   } catch (error: any) {
     console.error("Feedback error:", error)
     return NextResponse.json(
       { error: error.message || "Failed to submit feedback" },
+      { status: 500 }
+    )
+  }
+}
+
+export async function GET(request: Request) {
+  try {
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    // Check if user is admin
+    const { data: userData, error: userError } = await supabase
+      .from("users")
+      .select("role")
+      .eq("id", user.id)
+      .single()
+
+    if (userError || userData?.role !== "admin") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+
+    // Get query parameters for filtering
+    const { searchParams } = new URL(request.url)
+    const type = searchParams.get("type")
+    const limit = parseInt(searchParams.get("limit") || "50")
+    const offset = parseInt(searchParams.get("offset") || "0")
+
+    // Build query
+    let query = supabase
+      .from("feedback")
+      .select(`
+        *,
+        user:users!feedback_user_id_fkey(
+          id,
+          email
+        )
+      `)
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1)
+
+    if (type && ["suggestion", "bug", "contribution"].includes(type)) {
+      query = query.eq("type", type)
+    }
+
+    const { data: feedback, error: feedbackError } = await query
+
+    if (feedbackError) {
+      throw feedbackError
+    }
+
+    // Get total count for pagination
+    let countQuery = supabase.from("feedback").select("*", { count: "exact", head: true })
+    if (type && ["suggestion", "bug", "contribution"].includes(type)) {
+      countQuery = countQuery.eq("type", type)
+    }
+    const { count } = await countQuery
+
+    return NextResponse.json({
+      feedback,
+      total: count || 0,
+      limit,
+      offset,
+    })
+  } catch (error: any) {
+    console.error("Get feedback error:", error)
+    return NextResponse.json(
+      { error: error.message || "Failed to fetch feedback" },
       { status: 500 }
     )
   }
