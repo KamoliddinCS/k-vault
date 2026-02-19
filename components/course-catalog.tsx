@@ -372,30 +372,6 @@ export default function CourseCatalog({ resources, userRole }: CourseCatalogProp
     }
   }
 
-  const handleDelete = async (resourceId: string, title: string) => {
-    if (!confirm(`Are you sure you want to delete "${title}"? This action cannot be undone.`)) {
-      return
-    }
-
-    try {
-      const res = await fetch(`/api/resources/${resourceId}`, {
-        method: "DELETE",
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to delete resource")
-      }
-
-      // Invalidate and refetch resources
-      queryClient.invalidateQueries({ queryKey: ["resources"] })
-      toast.success("Resource deleted successfully")
-    } catch (error: any) {
-      toast.error(error.message || "Failed to delete resource")
-    }
-  }
-
   if (catalogData.length === 0) {
     return (
       <Card>
