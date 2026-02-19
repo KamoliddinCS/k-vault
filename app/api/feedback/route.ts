@@ -84,17 +84,10 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get("limit") || "50")
     const offset = parseInt(searchParams.get("offset") || "0")
 
-    // Build query
-    // Note: feedback.user_id references auth.users, but we join with public.users which has the same id
+    // Build query - fetch feedback first
     let query = supabase
       .from("feedback")
-      .select(`
-        *,
-        user:users!inner(
-          id,
-          email
-        )
-      `)
+      .select("*")
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1)
 
@@ -108,6 +101,34 @@ export async function GET(request: Request) {
       throw feedbackError
     }
 
+    // Get user emails for all feedback items
+    const userIds = feedback ? [...new Set(feedback.map((f: any) => f.user_id))] : []
+    const userEmails: Record<string, string> = {}
+
+    if (userIds.length > 0) {
+      const { data: users, error: usersError } = await supabase
+        .from("users")
+        .select("id, email")
+        .in("id", userIds)
+
+      if (!usersError && users) {
+        users.forEach((user: any) => {
+          userEmails[user.id] = user.email
+        })
+      }
+    }
+
+    // Enrich feedback with user email
+    const enrichedFeedback = feedback
+      ? feedback.map((item: any) => ({
+          ...item,
+          user: {
+            id: item.user_id,
+            email: userEmails[item.user_id] || "Unknown",
+          },
+        }))
+      : []
+
     // Get total count for pagination
     let countQuery = supabase.from("feedback").select("*", { count: "exact", head: true })
     if (type && ["suggestion", "bug", "contribution"].includes(type)) {
@@ -116,7 +137,7 @@ export async function GET(request: Request) {
     const { count } = await countQuery
 
     return NextResponse.json({
-      feedback,
+      feedback: enrichedFeedback,
       total: count || 0,
       limit,
       offset,
