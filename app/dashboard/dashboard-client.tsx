@@ -16,6 +16,8 @@ import CourseCatalog from "@/components/course-catalog"
 import UploadModal from "@/components/upload-modal"
 import { ThemeToggle } from "@/components/theme-toggle"
 import AdminPanel from "@/components/admin-panel"
+import Footer from "@/components/footer"
+import FeedbackModal from "@/components/feedback-modal"
 
 interface DashboardClientProps {
   userRole: "student" | "admin"
@@ -30,6 +32,7 @@ export default function DashboardClient({ userRole }: DashboardClientProps) {
   const [selectedType, setSelectedType] = useState<string>("")
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [showAdminPanel, setShowAdminPanel] = useState(false)
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false)
   const [viewMode, setViewMode] = useState<"grid" | "catalog">("grid")
 
   const { data: courses } = useQuery({
@@ -88,7 +91,7 @@ export default function DashboardClient({ userRole }: DashboardClientProps) {
   ]
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background flex flex-col">
       <header className="border-b sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-40">
         <div className="container mx-auto px-3 sm:px-4 py-3 sm:py-4">
           <div className="flex items-center justify-between gap-2 sm:gap-4">
@@ -143,7 +146,7 @@ export default function DashboardClient({ userRole }: DashboardClientProps) {
         </div>
       </header>
 
-      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
+      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-8 flex-1">
         <div className="mb-6 sm:mb-8">
           <div className="flex items-center justify-between mb-2">
             <div>
@@ -252,7 +255,12 @@ export default function DashboardClient({ userRole }: DashboardClientProps) {
             }}
           />
         )}
+
+        {showFeedbackModal && (
+          <FeedbackModal onClose={() => setShowFeedbackModal(false)} />
+        )}
       </main>
+      <Footer onFeedbackClick={() => setShowFeedbackModal(true)} />
     </div>
   )
 }
