@@ -110,36 +110,57 @@ export default function UploadModal({ onClose }: UploadModalProps) {
     professorId: string,
     type: ResourceType
   ) => {
-    const formData = new FormData()
-    formData.append("file", file)
-    formData.append("title", title)
-    formData.append("courseId", courseId)
-    formData.append("semesterId", semesterId)
-    formData.append("type", type)
-    if (professorId) {
-      formData.append("professorId", professorId)
+    const supabase = createClient()
+
+    // Use data already fetched in the component
+    const course = courses?.find((c: any) => c.id === courseId)
+    const semester = semesters?.find((s: any) => s.id === semesterId)
+
+    if (!course || !semester) {
+      throw new Error("Invalid course or semester")
     }
 
-    const res = await fetch("/api/upload", {
+    // Get department code from course data
+    const deptCode = (course.department as any)?.code || "MISC"
+
+    // Create file path: k-vault/{dept_code}/{course_code}/{year}-{term}/{uuid}-{filename}
+    const fileId = crypto.randomUUID()
+    const filePath = `k-vault/${deptCode}/${course.course_code}/${semester.year}-${semester.term}/${fileId}-${file.name}`
+
+    // Upload directly to Supabase Storage from client (bypasses Vercel's body size limit)
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from("k-vault")
+      .upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+      })
+
+    if (uploadError) {
+      throw new Error(`Failed to upload file: ${uploadError.message}`)
+    }
+
+    // Create resource record via API
+    const res = await fetch("/api/upload/complete-single", {
       method: "POST",
-      body: formData,
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        filePath,
+        title,
+        courseId,
+        semesterId,
+        professorId: professorId || null,
+        type,
+      }),
     })
 
     if (!res.ok) {
-      let errorMessage = "Upload failed"
-      try {
-        const contentType = res.headers.get("content-type")
-        if (contentType && contentType.includes("application/json")) {
-          const data = await res.json()
-          errorMessage = data.error || `Upload failed (${res.status})`
-        } else {
-          const text = await res.text()
-          errorMessage = text || `Upload failed (${res.status})`
-        }
-      } catch (parseError) {
-        errorMessage = `Upload failed: ${res.statusText || res.status}`
-      }
-      throw new Error(errorMessage)
+      // Try to delete the uploaded file if DB insert fails
+      await supabase.storage.from("k-vault").remove([filePath])
+      
+      const data = await res.json()
+      throw new Error(data.error || `Failed to create resource record: ${res.status}`)
     }
   }
 
