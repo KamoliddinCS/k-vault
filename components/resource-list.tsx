@@ -1,14 +1,16 @@
 "use client"
 
 import { useState } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Download, FileText, Calendar, User, BookOpen, Eye } from "lucide-react"
+import { Download, FileText, Calendar, User, BookOpen, Eye, Trash2 } from "lucide-react"
 import { Resource, ResourceType } from "@/lib/types"
 import { format } from "date-fns"
 import PDFPreview from "./pdf-preview"
 import DownloadProgress from "./download-progress"
+import { useToast, ToastContainer } from "@/components/ui/toast"
 
 interface ResourceListProps {
   resources: Resource[]
@@ -34,6 +36,8 @@ const resourceTypeColors: Record<ResourceType, string> = {
 }
 
 export default function ResourceList({ resources, userRole }: ResourceListProps) {
+  const queryClient = useQueryClient()
+  const toast = useToast()
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [downloadProgress, setDownloadProgress] = useState<{
     fileName: string
@@ -264,6 +268,30 @@ export default function ResourceList({ resources, userRole }: ResourceListProps)
     }
   }
 
+  const handleDelete = async (resourceId: string, title: string) => {
+    if (!confirm(`Are you sure you want to delete "${title}"? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/resources/${resourceId}`, {
+        method: "DELETE",
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to delete resource")
+      }
+
+      // Invalidate and refetch resources
+      queryClient.invalidateQueries({ queryKey: ["resources"] })
+      toast.success("Resource deleted successfully")
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete resource")
+    }
+  }
+
   if (!resourcesArray || resourcesArray.length === 0) {
     return (
       <Card>
@@ -333,6 +361,16 @@ export default function ResourceList({ resources, userRole }: ResourceListProps)
                 <Download className="h-4 w-4 mr-2" />
                 Download
               </Button>
+              {userRole === "admin" && (
+                <Button
+                  onClick={() => handleDelete(resource.id, resource.title)}
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -347,6 +385,7 @@ export default function ResourceList({ resources, userRole }: ResourceListProps)
           onClose={() => setDownloadProgress(null)}
         />
       )}
+      <ToastContainer toasts={toast.toasts} onRemove={toast.removeToast} />
     </div>
   )
 }

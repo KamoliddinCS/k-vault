@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -13,12 +14,14 @@ import {
   Eye,
   Calendar,
   User,
-  BookOpen
+  BookOpen,
+  Trash2
 } from "lucide-react"
 import { Resource, ResourceType } from "@/lib/types"
 import { format } from "date-fns"
 import PDFPreview from "./pdf-preview"
 import DownloadProgress from "./download-progress"
+import { useToast, ToastContainer } from "@/components/ui/toast"
 
 interface CourseCatalogProps {
   resources: Resource[]
@@ -345,6 +348,54 @@ export default function CourseCatalog({ resources, userRole }: CourseCatalogProp
     }
   }
 
+  const handleDelete = async (resourceId: string, title: string) => {
+    if (!confirm(`Are you sure you want to delete "${title}"? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/resources/${resourceId}`, {
+        method: "DELETE",
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to delete resource")
+      }
+
+      // Invalidate and refetch resources
+      queryClient.invalidateQueries({ queryKey: ["resources"] })
+      toast.success("Resource deleted successfully")
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete resource")
+    }
+  }
+
+  const handleDelete = async (resourceId: string, title: string) => {
+    if (!confirm(`Are you sure you want to delete "${title}"? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/resources/${resourceId}`, {
+        method: "DELETE",
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to delete resource")
+      }
+
+      // Invalidate and refetch resources
+      queryClient.invalidateQueries({ queryKey: ["resources"] })
+      toast.success("Resource deleted successfully")
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete resource")
+    }
+  }
+
   if (catalogData.length === 0) {
     return (
       <Card>
@@ -507,6 +558,20 @@ export default function CourseCatalog({ resources, userRole }: CourseCatalogProp
                                   >
                                     <Download className="h-4 w-4" />
                                   </Button>
+                                  {userRole === "admin" && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleDelete(resource.id, resource.title)
+                                      }}
+                                      title="Delete"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  )}
                                 </div>
                               </div>
                             ))}
@@ -532,6 +597,7 @@ export default function CourseCatalog({ resources, userRole }: CourseCatalogProp
           onClose={() => setDownloadProgress(null)}
         />
       )}
+      <ToastContainer toasts={toast.toasts} onRemove={toast.removeToast} />
     </>
   )
 }

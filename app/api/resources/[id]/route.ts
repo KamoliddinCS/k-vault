@@ -67,6 +67,69 @@ export async function DELETE(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
+    // Get resource info before deleting to access file paths
+    const { data: resource, error: resourceError } = await supabase
+      .from("resources")
+      .select("file_key, file_url")
+      .eq("id", params.id)
+      .single()
+
+    if (resourceError) {
+      return NextResponse.json({ error: "Resource not found" }, { status: 404 })
+    }
+
+    const fileKey = resource.file_key || resource.file_url
+    if (fileKey) {
+      // Check if this is a chunked file by trying to download the first chunk
+      const { data: firstChunk, error: chunkError } = await supabase.storage
+        .from("k-vault")
+        .download(`${fileKey}.chunk0`)
+
+      const isChunked = !chunkError && firstChunk !== null
+
+      if (isChunked) {
+        // Delete all chunks
+        const chunksToDelete: string[] = []
+        let chunkIndex = 0
+        
+        while (true) {
+          const chunkPath = `${fileKey}.chunk${chunkIndex}`
+          const { data: chunkData, error: chunkCheckError } = await supabase.storage
+            .from("k-vault")
+            .download(chunkPath)
+          
+          if (chunkCheckError || !chunkData) {
+            break
+          }
+          
+          chunksToDelete.push(chunkPath)
+          chunkIndex++
+        }
+
+        if (chunksToDelete.length > 0) {
+          const { error: deleteError } = await supabase.storage
+            .from("k-vault")
+            .remove(chunksToDelete)
+          
+          if (deleteError) {
+            console.error("Failed to delete chunks:", deleteError)
+            // Continue with database deletion even if file deletion fails
+          }
+        }
+      } else {
+        // Delete single file
+        const { error: deleteError } = await supabase.storage
+          .from("k-vault")
+          .remove([fileKey])
+        
+        if (deleteError) {
+          console.error("Failed to delete file:", deleteError)
+          // Continue with database deletion even if file deletion fails
+        }
+      }
+    }
+
+    // Delete resource from database
     const { error } = await supabase
       .from("resources")
       .delete()
