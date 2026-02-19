@@ -47,6 +47,8 @@ const resourceTypeColors: Record<ResourceType, string> = {
 }
 
 export default function CourseCatalog({ resources, userRole }: CourseCatalogProps) {
+  const queryClient = useQueryClient()
+  const toast = useToast()
   const [expandedCourses, setExpandedCourses] = useState<Set<string>>(new Set())
   const [expandedSemesters, setExpandedSemesters] = useState<Set<string>>(new Set())
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
